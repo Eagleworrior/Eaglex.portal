@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>EAGLEX CASINO</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="neon-header">
+      <h1 class="glow gradient-text">EAGLEX CASINO</h1>
+      <p class="subglow gradient-sub">Neon Nights • High Stakes • Infinite Symbols</p>
+    </header>
+
+    <main class="main-grid" role="main">
+      <section class="slot-panel" aria-label="Slot machine panel">
+        <div class="machine-frame" role="region" aria-label="Slot machine">
+          <div class="frame-glow top"></div>
+          <div class="frame-glow bottom"></div>
+
+          <div class="reel-shell">
+            <div class="reel-box" id="reelBox" aria-live="polite" aria-atomic="true">
+              <div class="reel" id="reel0"><div class="symbol">🍒</div></div>
+              <div class="reel" id="reel1"><div class="symbol">💎</div></div>
+              <div class="reel" id="reel2"><div class="symbol">7️⃣</div></div>
+            </div>
+            <div class="frame-border"></div>
+          </div>
+        </div>
+
+        <div class="controls" role="form" aria-label="Controls">
+          <div class="balance gradient-badge" id="balance">DEMO: KES 0 • REAL: KES 0</div>
+
+          <div class="bet-wrap">
+            <label class="muted label-decor">Bet</label>
+            <div class="bet-decor">
+              <input id="bet" type="number" min="20" value="20" aria-label="Bet amount" />
+              <div class="bet-glow">KES</div>
+            </div>
+          </div>
+
+          <div class="mode-wrap">
+            <label class="muted label-decor">Mode</label>
+            <div class="mode-pill" role="tablist" aria-label="Mode selector">
+              <button id="modeDemo" class="mode-btn active" role="tab" aria-selected="true">DEMO</button>
+              <button id="modeReal" class="mode-btn" role="tab" aria-selected="false">REAL</button>
+            </div>
+          </div>
+
+          <button id="spinBtn" class="neon-btn big">SPIN</button>
+          <button id="depositBtn" class="neon-btn alt">DEPOSIT</button>
+          <button id="withdrawBtn" class="neon-btn alt2">WITHDRAW</button>
+        </div>
+
+        <div class="feed" id="feed" aria-live="polite">
+          <div class="feed-title gradient-small">Live Wins</div>
+          <ul id="wins" class="wins-list" aria-label="Recent wins"></ul>
+        </div>
+      </section>
+
+      <aside class="sidebar" aria-label="Sidebar">
+        <div class="card neon-card">
+          <div class="card-head">
+            <h2 class="gradient-small">Deposit Instructions</h2>
+            <button id="toggleSymbols" class="small-toggle">Symbols</button>
+          </div>
+          <div id="depositInstructions" class="instructions-block decorated-text">
+            <p><strong class="accent">Minimum deposit:</strong> <span id="minDeposit">KES 50</span></p>
+            <ol>
+              <li>Open your mobile money app (M-Pesa).</li>
+              <li>Select Paybill and enter <strong class="accent">PAYBILL 880100</strong>.</li>
+              <li>For Account Number enter <strong class="accent">1004508555</strong>.</li>
+              <li>Enter the amount (minimum 50 KES) and send.</li>
+              <li>Keep the receipt. Submit it to Support for manual crediting (demo).</li>
+            </ol>
+            <p class="muted">This page shows instructions only. Replace placeholders with real payment integration in production.</p>
+          </div>
+        </div>
+
+        <div class="card neon-card symbols-card collapsed" id="symbolsCard" aria-hidden="true">
+          <h3 class="gradient-small">Symbols</h3>
+          <div class="symbols-scroll" id="symbols" role="list"></div>
+        </div>
+
+        <div class="card neon-card">
+          <h3 class="gradient-small">Withdraw</h3>
+          <p class="decorated-text">Minimum withdraw: <strong id="minWithdraw">KES 500</strong></p>
+          <button id="openWithdraw" class="neon-btn small">Request Withdraw</button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="withdrawModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <h3 class="gradient-small">Withdraw Request</h3>
+        <label class="muted label-decor">Amount (KES)</label>
+        <input id="withdrawAmount" type="number" min="500" />
+        <label class="muted label-decor">Method</label>
+        <select id="withdrawMethod"></select>
+        <label class="muted label-decor">Details (account number / phone / wallet)</label>
+        <input id="withdrawDetails" type="text" />
+        <div class="modal-actions">
+          <button id="submitWithdraw" class="neon-btn">Submit</button>
+          <button id="closeWithdraw" class="neon-btn alt small">Close</button>
+        </div>
+        <div id="withdrawMsg" class="muted"></div>
+      </div>
+    </div>
+
+    <footer class="footer decorated-text">
+      <small>Demo only • Responsible gaming encouraged • Replace payment placeholders before production</small>
+    </footer>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
+

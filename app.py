@@ -1,378 +1,293 @@
 #!/usr/bin/env python3
-"""
-Text-First Super-App (single-file, Kali-ready)
-- Paste this file as ~/text_super_app/app.py
-- Activate venv and run: uvicorn app:app --reload --host 127.0.0.1 --port 8000
-- This file is self-contained and avoids accidental shell text or browser metadata.
-"""
+# app.py - EAGLEX CASINO complete backend with robust error handling
+from flask import Flask, render_template, jsonify, request
+from flask_cors import CORS
+import random, time, uuid, os, json, traceback, sys
 
-import os
-import re
-import json
-import time
-import ast
-import math
-import sqlite3
-import subprocess
-from datetime import datetime
-from typing import Optional
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File, HTTPException
-from pydantic import BaseModel
-from rich.console import Console
+app = Flask(__name__, template_folder="templates", static_folder="static")
+CORS(app)
 
-# Optional features
-try:
-    from playsound import playsound
-    _HAS_PLAYSOUND = True
-except Exception:
-    _HAS_PLAYSOUND = False
+DB_FILE = "casino_store.json"
 
-try:
-    import pytesseract
-    from PIL import Image
-    _HAS_OCR = True
-except Exception:
-    _HAS_OCR = False
-
-# App and console
-app = FastAPI(title="Text-First Super-App (Kali Edition)")
-console = Console()
-
-# ---------------------------
-# Simple persistence (SQLite)
-# ---------------------------
-DB_PATH = os.path.join(os.path.dirname(__file__), "superapp.db")
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS sessions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        created_at TEXT,
-        last_active TEXT,
-        context TEXT
-    )""")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts TEXT,
-        module TEXT,
-        command TEXT,
-        result TEXT
-    )""")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts TEXT,
-        amount REAL,
-        currency TEXT,
-        category TEXT,
-        note TEXT
-    )""")
-    conn.commit()
-    conn.close()
-
-init_db()
-
-def log_event(module, command, result):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("INSERT INTO logs (ts,module,command,result) VALUES (?,?,?,?)",
-                (datetime.utcnow().isoformat(), module, command, json.dumps(result)))
-    conn.commit()
-    conn.close()
-
-# ---------------------------
-# Utilities: safe math eval
-# ---------------------------
-ALLOWED_AST_NODES = {
-    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Num, ast.Load,
-    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
-    ast.USub, ast.UAdd, ast.Call, ast.Name, ast.Tuple, ast.List,
-    ast.Constant
-}
-
-SAFE_NAMES = {
-    'abs': abs, 'round': round, 'min': min, 'max': max,
-    'pow': pow, 'sqrt': math.sqrt, 'sin': math.sin, 'cos': math.cos,
-    'tan': math.tan, 'log': math.log, 'log10': math.log10
-}
-
-def safe_eval_expr(expr: str):
-    """
-    Safely evaluate arithmetic expressions and a small set of math functions.
-    """
-    try:
-        node = ast.parse(expr, mode='eval')
-    except Exception:
-        raise ValueError("Invalid expression")
-    for n in ast.walk(node):
-        if not isinstance(n, tuple(ALLOWED_AST_NODES)):
-            raise ValueError("Disallowed expression")
-    code = compile(node, "<safe_eval>", "eval")
-    return eval(code, {"__builtins__": {}}, SAFE_NAMES)
-
-# ---------------------------
-# Sanitized subprocess helper
-# ---------------------------
-def run_sanitized_command(cmd_list, timeout=30):
-    """
-    Run a subprocess with a sanitized command list.
-    cmd_list must be a list of strings (no shell=True).
-    """
-    if not isinstance(cmd_list, (list, tuple)) or not cmd_list:
-        raise ValueError("Invalid command")
-    safe_re = re.compile(r'^[\w\-\./:]+$')
-    for arg in cmd_list:
-        if not safe_re.match(arg):
-            raise ValueError("Unsafe argument detected")
-    try:
-        proc = subprocess.run(cmd_list, capture_output=True, text=True, timeout=timeout)
-        return {"returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
-    except subprocess.TimeoutExpired:
-        return {"returncode": -1, "stdout": "", "stderr": "timeout"}
-    except Exception as e:
-        return {"returncode": -1, "stdout": "", "stderr": str(e)}
-
-# ---------------------------
-# Module: Productivity
-# ---------------------------
-def productivity_handle(text: str, user: Optional[str] = None):
-    t = text.lower()
-    if "remind" in t or "reminder" in t:
-        ts = datetime.utcnow().isoformat()
-        result = {"status": "ok", "message": "Reminder saved", "text": text, "created_at": ts}
-        log_event("Productivity", text, result)
-        return result
-    if "task" in t or "todo" in t:
-        ts = datetime.utcnow().isoformat()
-        result = {"status": "ok", "message": "Task added", "text": text, "created_at": ts}
-        log_event("Productivity", text, result)
-        return result
-    return {"status": "unknown", "module": "Productivity", "text": text}
-
-# ---------------------------
-# Module: Security (Kali tools)
-# ---------------------------
-def security_handle(text: str):
-    t = text.lower()
-    if "scan" in t or "nmap" in t:
-        m = re.search(r'(\d{1,3}(?:\.\d{1,3}){3}|localhost|127\.0\.0\.1|\w[\w\.-]+)', text)
-        target = m.group(1) if m else "localhost"
-        if not re.match(r'^(localhost|127\.0\.0\.1|\d{1,3}(?:\.\d{1,3}){3}|[a-zA-Z0-9\.-]+)$', target):
-            return {"status": "error", "error": "Invalid target"}
+def load_db():
+    if os.path.exists(DB_FILE):
         try:
-            res = run_sanitized_command(["nmap", "-F", target], timeout=60)
-        except ValueError as e:
-            return {"status": "error", "error": str(e)}
-        log_event("Security", text, res)
-        return {"module": "Security", "action": "nmap", "target": target, "result": res}
-    if "phishing" in t or "link" in t:
-        result = {"module": "Security", "action": "phishing_check", "result": "placeholder: no suspicious links found"}
-        log_event("Security", text, result)
-        return result
-    return {"status": "unknown", "module": "Security", "text": text}
-
-# ---------------------------
-# Module: Utilities (OCR, conversions, safe math, CSV export)
-# ---------------------------
-def utilities_handle(text: str, upload_file: Optional[UploadFile] = None):
-    t = text.lower()
-    if "ocr" in t or "read text" in t:
-        if not _HAS_OCR:
-            return {"status": "error", "error": "OCR not available; install pytesseract and tesseract-ocr"}
-        try:
-            if upload_file:
-                tmp_path = os.path.join("/tmp", f"ocr_{int(time.time())}_{upload_file.filename}")
-                with open(tmp_path, "wb") as f:
-                    f.write(upload_file.file.read())
-                img = Image.open(tmp_path)
-            else:
-                sample = os.path.join(os.path.dirname(__file__), "sample.png")
-                if not os.path.exists(sample):
-                    return {"status": "error", "error": "No image provided and sample.png missing"}
-                img = Image.open(sample)
-            text_out = pytesseract.image_to_string(img)
-            result = {"module": "Utilities", "action": "ocr", "text": text_out}
-            log_event("Utilities", text, result)
-            return result
-        except Exception as e:
-            return {"status": "error", "error": str(e)}
-    if "calculate" in t or re.search(r'^\s*[\d\.\s\+\-\*\/\(\)]+$', text):
-        expr = text
-        if "calculate" in t:
-            expr = text.split("calculate", 1)[1].strip()
-        try:
-            val = safe_eval_expr(expr)
-            result = {"module": "Utilities", "action": "calculate", "expression": expr, "result": val}
-            log_event("Utilities", text, result)
-            return result
-        except Exception as e:
-            return {"status": "error", "error": "Calculation failed: " + str(e)}
-    if "export" in t and "csv" in t:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("SELECT ts,module,command,result FROM logs ORDER BY id DESC LIMIT 100")
-        rows = cur.fetchall()
-        csv_path = os.path.join(os.path.dirname(__file__), "export_logs.csv")
-        with open(csv_path, "w", newline="", encoding="utf-8") as f:
-            import csv as _csv
-            writer = _csv.writer(f)
-            writer.writerow(["ts", "module", "command", "result"])
-            for r in rows:
-                writer.writerow(r)
-        conn.close()
-        return {"module": "Utilities", "action": "export_csv", "file": csv_path}
-    if "convert" in t:
-        return {"module": "Utilities", "action": "convert", "note": "conversion placeholder; integrate libreoffice or API"}
-    return {"status": "unknown", "module": "Utilities", "text": text}
-
-# ---------------------------
-# Module: Entertainment (text games, trivia, audio)
-# ---------------------------
-def entertainment_handle(text: str, background: BackgroundTasks = None):
-    t = text.lower()
-    if "play" in t and "music" in t:
-        if not _HAS_PLAYSOUND:
-            return {"status": "error", "error": "Audio playback not available (playsound missing)"}
-        sound_candidates = [
-            "/usr/share/sounds/alsa/Front_Center.wav",
-            "/usr/share/sounds/alsa/Rear_Center.wav"
-        ]
-        for s in sound_candidates:
-            if os.path.exists(s):
-                if background:
-                    background.add_task(playsound, s)
-                else:
-                    try:
-                        playsound(s)
-                    except Exception:
-                        pass
-                return {"module": "Entertainment", "action": "play_music", "file": s}
-        return {"module": "Entertainment", "action": "play_music", "note": "no system sound found"}
-    if "game" in t or "adventure" in t:
-        story = (
-            "You wake up in a dimly lit room. There is a door to the north and a window to the east. "
-            "Type 'go north' or 'look window' to continue. (This is a stateless demo; extend for sessions.)"
-        )
-        return {"module": "Entertainment", "action": "text_adventure", "story": story}
-    if "trivia" in t:
-        q = {"question": "What is the capital of Kenya?", "choices": ["Nairobi", "Mombasa", "Kisumu"], "answer": "Nairobi"}
-        return {"module": "Entertainment", "action": "trivia", "question": q}
-    return {"status": "unknown", "module": "Entertainment", "text": text}
-
-# ---------------------------
-# Module: Finance (expense logging, crypto placeholder)
-# ---------------------------
-def finance_handle(text: str):
-    t = text.lower()
-    if "expense" in t or re.search(r'\bspent\b|\bpay\b|\bpaid\b', t):
-        m = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]{2,4})?', text)
-        if m:
-            amount = float(m.group(1))
-            currency = m.group(2) if m.group(2) else "USD"
-        else:
-            amount = 0.0
-            currency = "USD"
-        category = "general"
-        note = text
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO expenses (ts,amount,currency,category,note) VALUES (?,?,?,?,?)",
-                    (datetime.utcnow().isoformat(), amount, currency, category, note))
-        conn.commit()
-        conn.close()
-        result = {"module": "Finance", "action": "expense_logged", "amount": amount, "currency": currency}
-        log_event("Finance", text, result)
-        return result
-    if "crypto" in t or "bitcoin" in t or "btc" in t:
-        return {"module": "Finance", "action": "crypto_prices", "BTC": "placeholder: integrate API"}
-    return {"status": "unknown", "module": "Finance", "text": text}
-
-# ---------------------------
-# Module: Knowledge (placeholder)
-# ---------------------------
-def knowledge_handle(text: str):
+            with open(DB_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
     return {
-        "module": "Knowledge",
-        "action": "search_placeholder",
-        "note": "Integrate search API to fetch live facts and summaries."
+        "users": {
+            "demo_user": {
+                "id": "demo_user",
+                "demo_balance": 5000.0,
+                "real_balance": 0.0,
+                "currency": "KES",
+                "transactions": []
+            }
+        },
+        "settings": {
+            "paybill": "880100",
+            "account_number": "1004508555",
+            "min_deposit": 50,
+            "min_play": 20,
+            "min_withdraw": 500
+        }
     }
 
-# ---------------------------
-# Dispatcher
-# ---------------------------
-class CommandIn(BaseModel):
-    text: str
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=2)
 
-@app.post("/command")
-def command_endpoint(payload: CommandIn, background_tasks: BackgroundTasks):
-    text = payload.text.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="Empty command")
-    t = text.lower()
+DB = load_db()
+USER = DB["users"]["demo_user"]
+
+SYMBOLS = [
+    "🍒","🍋","🍊","🍉","🍇","🍓","🥭","🍍","🍑","🍈",
+    "7️⃣","🔔","⭐","💎","💰","🎲","🎰",
+    "🚗","🏎️","🚀","🛩️","🚁","🚤",
+    "🍔","🍕","🍟","🍩","🍪","🍫","🍦","🍰",
+    "👑","🧧","🎁","🪙","📿","🔮",
+    "🐶","🐱","🦁","🐯","🦄","🐉",
+    "♠️","♥️","♦️","♣️","🃏","🎟️"
+]
+
+PAYOUT_RULES = {
+    "7️⃣": 100,
+    "💎": 50,
+    "💰": 30,
+    "⭐": 20,
+    "🔔": 15,
+    "🍒": 10,
+    "default": 2
+}
+
+def record_transaction(user, t_type, amount, note=""):
+    tx = {
+        "id": str(uuid.uuid4()),
+        "type": t_type,
+        "amount": amount,
+        "demo_balance": user.get("demo_balance", 5000.0),
+        "real_balance": user.get("real_balance", 0.0),
+        "note": note,
+        "timestamp": int(time.time())
+    }
+    user["transactions"].append(tx)
+    save_db(DB)
+    return tx
+
+@app.errorhandler(Exception)
+def handle_uncaught_exception(e):
+    tb = traceback.format_exc()
+    print("UNCAUGHT EXCEPTION:", file=sys.stderr)
+    print(tb, file=sys.stderr)
+    return jsonify({"error": "Internal server error", "detail": str(e)}), 500
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/deposit")
+def deposit_page():
+    s = DB.get("settings", {})
+    instructions = {
+        "title": "Deposit Instructions",
+        "currency": "KES",
+        "minimum_deposit": s.get("min_deposit", 50),
+        "paybill": f"PAYBILL {s.get('paybill','880100')}",
+        "account_number": f"ACCOUNT {s.get('account_number','1004508555')}",
+        "instructions": [
+            "Open your mobile money app (M-Pesa or your provider).",
+            f"Select Paybill and enter the Paybill number: PAYBILL {s.get('paybill','880100')}.",
+            f"For Account Number enter: ACCOUNT {s.get('account_number','1004508555')}.",
+            f"Enter the amount (minimum {s.get('min_deposit',50)} KES).",
+            "Confirm and send. Keep the transaction receipt.",
+            "After sending, go to Support and submit your receipt for manual crediting (demo)."
+        ],
+        "note": "This page shows instructions only. Replace placeholders with real payment integration in production."
+    }
+    return jsonify(instructions)
+
+@app.route("/api/balance")
+def api_balance():
+    settings = DB.get("settings", {})
+    return jsonify({
+        "demo_balance": USER.get("demo_balance", 5000.0),
+        "real_balance": USER.get("real_balance", 0.0),
+        "currency": USER.get("currency", "KES"),
+        "min_deposit": settings.get("min_deposit", 50),
+        "min_play": settings.get("min_play", 20),
+        "min_withdraw": settings.get("min_withdraw", 500)
+    })
+
+@app.route("/api/transactions")
+def api_transactions():
+    return jsonify({"transactions": USER["transactions"][-200:]})
+
+@app.route("/api/spin", methods=["POST"])
+def api_spin():
     try:
-        if any(k in t for k in ["remind", "reminder", "task", "todo"]):
-            res = productivity_handle(text)
-        elif any(k in t for k in ["scan", "nmap", "phishing", "network"]):
-            res = security_handle(text)
-        elif any(k in t for k in ["ocr", "convert", "calculate", "export", "csv"]):
-            res = utilities_handle(text)
-        elif any(k in t for k in ["play", "music", "game", "trivia", "adventure"]):
-            res = entertainment_handle(text, background=background_tasks)
-        elif any(k in t for k in ["expense", "spent", "paid", "crypto", "bitcoin", "btc"]):
-            res = finance_handle(text)
-        elif any(k in t for k in ["search", "summarize", "news", "who", "what", "when", "where", "why"]):
-            res = knowledge_handle(text)
+        data = request.get_json(force=True)
+        bet = float(data.get("bet", 0))
+        mode = str(data.get("mode", "real")).lower()
+        settings = DB.get("settings", {})
+        min_play = settings.get("min_play", 20)
+
+        if bet <= 0:
+            return jsonify({"error": "Invalid bet amount"}), 400
+        if bet < min_play:
+            return jsonify({"error": f"Minimum play amount is KES {min_play}"}), 400
+
+        balance_key = "demo_balance" if mode == "demo" else "real_balance"
+        if USER.get(balance_key, 0.0) < bet:
+            if mode == "real":
+                return jsonify({"error": "Insufficient real balance. Please deposit to play in Real mode."}), 402
+            else:
+                return jsonify({"error": "Insufficient demo balance."}), 400
+
+        USER[balance_key] -= bet
+        record_transaction(USER, "bet", -bet, note=f"Spin bet ({mode})")
+
+        if mode == "demo":
+            win_chance = 0.78
+            big_win_chance = 0.18
+            multiplier_boost = 1.9
         else:
-            res = {"module": "General", "action": "unrecognized", "text": text}
-        log_event("Dispatcher", text, res)
-        return {"status": "ok", "response": res}
-    except Exception as e:
-        log_event("Dispatcher", text, {"error": str(e)})
-        raise HTTPException(status_code=500, detail=str(e))
+            win_chance = 0.30
+            big_win_chance = 0.02
+            multiplier_boost = 1.0
 
-# ---------------------------
-# File upload endpoint for OCR
-# ---------------------------
-@app.post("/ocr-upload")
-async def ocr_upload(file: UploadFile = File(...)):
-    if not _HAS_OCR:
-        return {"status": "error", "error": "OCR not available; install pytesseract and tesseract-ocr"}
-    tmp_path = os.path.join("/tmp", f"ocr_{int(time.time())}_{file.filename}")
-    with open(tmp_path, "wb") as f:
-        f.write(await file.read())
+        is_win = random.random() < win_chance
+
+        visible = []
+        for _ in range(3):
+            reel = [random.choice(SYMBOLS) for _ in range(20)]
+            visible.append([random.choice(reel) for _ in range(3)])
+
+        center = [v[1] for v in visible]
+        payout = 0.0
+        win_symbols = []
+
+        if is_win:
+            if mode == "demo" and random.random() < big_win_chance:
+                preferred = ["7️⃣", "💎", "💰"]
+                sym = random.choice(preferred)
+            else:
+                keys = [k for k in PAYOUT_RULES.keys() if k != "default"]
+                sym = random.choice(keys + SYMBOLS)
+                if sym == "default":
+                    sym = random.choice(SYMBOLS)
+
+            for i in range(3):
+                visible[i][1] = sym
+            center = [visible[i][1] for i in range(3)]
+
+            base_multiplier = PAYOUT_RULES.get(sym, PAYOUT_RULES["default"])
+            multiplier = base_multiplier * multiplier_boost
+
+            if mode == "demo" and random.random() < big_win_chance:
+                multiplier *= random.choice([2, 3])
+
+            payout = bet * multiplier
+            USER[balance_key] += payout
+            record_transaction(USER, "win", payout, note=f"Matched {sym} x3 ({mode})")
+            win_symbols = center
+        else:
+            if mode == "demo" and random.random() < 0.08:
+                sym = random.choice(SYMBOLS)
+                visible[0][1] = sym
+                visible[1][1] = sym
+                visible[2][1] = random.choice([s for s in SYMBOLS if s != sym])
+                center = [v[1] for v in visible]
+                payout = bet * 1.2
+                USER[balance_key] += payout
+                record_transaction(USER, "win", payout, note=f"Demo consolation two-match")
+                win_symbols = center
+            else:
+                win_symbols = center
+
+        save_db(DB)
+        return jsonify({
+            "reels": visible,
+            "center": center,
+            "payout": payout,
+            "demo_balance": USER.get("demo_balance", 5000.0),
+            "real_balance": USER.get("real_balance", 0.0),
+            "balance_used": balance_key,
+            "win_symbols": win_symbols,
+            "mode": mode,
+            "timestamp": int(time.time())
+        })
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("Exception in /api/spin:", file=sys.stderr)
+        print(tb, file=sys.stderr)
+        return jsonify({"error": "Internal server error during spin", "detail": str(e)}), 500
+
+@app.route("/api/credit_demo", methods=["POST"])
+def api_credit_demo():
     try:
-        img = Image.open(tmp_path)
-        text = pytesseract.image_to_string(img)
-        log_event("Utilities", f"ocr-upload {file.filename}", {"text": text})
-        return {"status": "ok", "text": text}
+        data = request.get_json(force=True)
+        amount = float(data.get("amount", 0))
+        if amount <= 0:
+            return jsonify({"error": "Invalid amount"}), 400
+        USER["demo_balance"] += amount
+        tx = record_transaction(USER, "deposit_demo", amount, note="Manual demo credit")
+        return jsonify({"status": "ok", "transaction": tx, "demo_balance": USER["demo_balance"]})
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        return jsonify({"error": "Internal server error", "detail": str(e)}), 500
 
-# ---------------------------
-# Health and admin endpoints
-# ---------------------------
-@app.get("/health")
-def health():
-    return {"status": "ok", "time": datetime.utcnow().isoformat()}
+@app.route("/api/credit_real", methods=["POST"])
+def api_credit_real():
+    try:
+        data = request.get_json(force=True)
+        amount = float(data.get("amount", 0))
+        if amount < DB.get("settings", {}).get("min_deposit", 50):
+            return jsonify({"error": f"Minimum deposit is KES {DB.get('settings',{}).get('min_deposit',50)}"}), 400
+        USER["real_balance"] += amount
+        tx = record_transaction(USER, "deposit_real", amount, note="Manual real credit (after deposit)")
+        return jsonify({"status": "ok", "transaction": tx, "real_balance": USER["real_balance"]})
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        return jsonify({"error": "Internal server error", "detail": str(e)}), 500
 
-@app.get("/logs")
-def get_logs(limit: int = 50):
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT id,ts,module,command,result FROM logs ORDER BY id DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return {"count": len(rows), "rows": rows}
+@app.route("/api/withdraw_methods")
+def api_withdraw_methods():
+    methods = [
+        {"id":"bank","label":"Bank Transfer"},
+        {"id":"mpesa","label":"M-Pesa Transfer"},
+        {"id":"paypal","label":"PayPal"},
+        {"id":"crypto","label":"Crypto (BTC/ETH)"},
+        {"id":"airtel","label":"Airtel Money"},
+        {"id":"cashpickup","label":"Cash Pickup"}
+    ]
+    return jsonify({"min_withdraw": DB.get("settings",{}).get("min_withdraw",500), "methods": methods})
 
-# ---------------------------
-# Startup message
-# ---------------------------
-@app.on_event("startup")
-def startup_event():
-    console.print("[bold green]Text-First Super-App started[/bold green]")
-    console.print("[yellow]Endpoints: POST /command  POST /ocr-upload  GET /health  GET /logs[/yellow]")
-    console.print("[cyan]Open http://127.0.0.1:8000/docs to interact via Swagger UI[/cyan"])
+@app.route("/api/withdraw", methods=["POST"])
+def api_withdraw():
+    try:
+        data = request.get_json(force=True)
+        amount = float(data.get("amount", 0))
+        method = data.get("method", "")
+        details = data.get("details", "")
+        min_w = DB.get("settings",{}).get("min_withdraw",500)
+        if amount < min_w:
+            return jsonify({"error": f"Minimum withdrawal is KES {min_w}"}), 400
+        if amount > USER.get("real_balance", 0.0):
+            return jsonify({"error": "Insufficient real balance"}), 400
+        USER["real_balance"] -= amount
+        tx = record_transaction(USER, "withdraw_request", -amount, note=f"Withdraw via {method}")
+        save_db(DB)
+        return jsonify({"status":"pending","transaction":tx,"message":"Withdrawal request received. Admin will process manually in demo."})
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        return jsonify({"error": "Internal server error", "detail": str(e)}), 500
+
+if __name__ == "__main__":
+    save_db(DB)
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
