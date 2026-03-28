@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>{% block title %}EAGLEX CASINO{% endblock %}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <div class="app">
+    <header class="neon-header">
+      <h1 class="glow gradient-text">EAGLEX CASINO</h1>
+      <p class="subglow gradient-sub">Neon Nights • High Stakes • Infinite Colors</p>
+    </header>
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
+

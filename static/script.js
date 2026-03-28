@@ -1,4 +1,5 @@
-// static/script.js - EAGLEX CASINO client
+// EAGLEX CASINO client
+
 const balanceEl = document.getElementById("balance");
 const spinBtn = document.getElementById("spinBtn");
 const depositBtn = document.getElementById("depositBtn");
@@ -6,7 +7,11 @@ const withdrawBtn = document.getElementById("withdrawBtn");
 const betInput = document.getElementById("bet");
 const winsList = document.getElementById("wins");
 const symbolsContainer = document.getElementById("symbols");
-const reelsEls = [document.getElementById("reel0"), document.getElementById("reel1"), document.getElementById("reel2")];
+const reelsEls = [
+  document.getElementById("reel0"),
+  document.getElementById("reel1"),
+  document.getElementById("reel2")
+];
 const symbolsCard = document.getElementById("symbolsCard");
 const toggleSymbols = document.getElementById("toggleSymbols");
 const minDepositEl = document.getElementById("minDeposit");
@@ -37,6 +42,7 @@ const SYMBOLS = [
 ];
 
 function populateSymbols(){
+  if(!symbolsContainer) return;
   symbolsContainer.innerHTML = "";
   for(let s of SYMBOLS){
     const el = document.createElement("div");
@@ -47,13 +53,20 @@ function populateSymbols(){
 }
 
 async function fetchBalance(){
+  if(!balanceEl) return;
   try{
     const res = await fetch("/api/balance");
     const j = await res.json();
-    balanceEl.innerHTML = `<span class="balance-demo">DEMO: KES ${j.demo_balance.toFixed(2)}</span> <span class="balance-real">REAL: KES ${j.real_balance.toFixed(2)}</span>`;
-    minDepositEl.textContent = `KES ${j.min_deposit}`;
-    minWithdrawEl.textContent = `KES ${j.min_withdraw}`;
-    betInput.min = j.min_play;
+    if(j.error){
+      balanceEl.textContent = "Login required.";
+      return;
+    }
+    balanceEl.innerHTML =
+      `<span class="balance-demo">DEMO: KES ${j.demo_balance.toFixed(2)}</span> ` +
+      `<span class="balance-real">REAL: KES ${j.real_balance.toFixed(2)}</span>`;
+    if(minDepositEl) minDepositEl.textContent = `KES ${j.min_deposit}`;
+    if(minWithdrawEl) minWithdrawEl.textContent = `KES ${j.min_withdraw}`;
+    if(betInput) betInput.min = j.min_play;
   }catch(e){
     balanceEl.textContent = "Balance: --";
   }
@@ -63,17 +76,23 @@ async function fetchSettings(){
   try{
     const res = await fetch("/deposit");
     const j = await res.json();
-    document.getElementById("depositInstructions").querySelector("ol").innerHTML = j.instructions.map((s,i)=>`<li>${s}</li>`).join("");
+    const dep = document.getElementById("depositInstructions");
+    if(dep && j.instructions){
+      dep.querySelector("ol").innerHTML = j.instructions.map((s,i)=>`<li>${s}</li>`).join("");
+    }
     const w = await fetch("/api/withdraw_methods");
     const wj = await w.json();
-    withdrawMethod.innerHTML = wj.methods.map(m=>`<option value="${m.id}">${m.label}</option>`).join("");
-    withdrawAmount.min = wj.min_withdraw;
+    if(withdrawMethod && wj.methods){
+      withdrawMethod.innerHTML = wj.methods.map(m=>`<option value="${m.id}">${m.label}</option>`).join("");
+    }
+    if(withdrawAmount) withdrawAmount.min = wj.min_withdraw;
   }catch(e){
     console.error(e);
   }
 }
 
 function animateReels(visible){
+  if(!reelsEls[0]) return;
   for(let i=0;i<3;i++){
     reelsEls[i].innerHTML = "";
     for(let r=0;r<3;r++){
@@ -87,6 +106,7 @@ function animateReels(visible){
 
 function setMode(mode){
   currentMode = mode;
+  if(!modeDemoBtn || !modeRealBtn) return;
   if(mode === "demo"){
     modeDemoBtn.classList.add("active");
     modeRealBtn.classList.remove("active");
@@ -97,6 +117,7 @@ function setMode(mode){
 }
 
 async function spin(){
+  if(!betInput || !spinBtn) return;
   const bet = parseFloat(betInput.value || "0");
   const minBet = parseFloat(betInput.min || "20");
   if(isNaN(bet) || bet < minBet){
@@ -122,8 +143,8 @@ async function spin(){
     if (!res.ok) {
       const serverMsg = payload && payload.error ? payload.error : `Server error ${res.status}`;
       if (res.status === 402 && currentMode === "real") {
-        alert(`${serverMsg}\n\nOpen deposit instructions now.`);
-        depositBtn.click();
+        alert(serverMsg + "\n\nOpen deposit instructions now.");
+        if(depositBtn) depositBtn.click();
       } else {
         alert(serverMsg);
       }
@@ -134,7 +155,11 @@ async function spin(){
     for(let r=0;r<rounds;r++){
       const temp = [];
       for(let i=0;i<3;i++){
-        temp.push([SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)], SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)], SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)]]);
+        temp.push([
+          SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)],
+          SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)],
+          SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)]
+        ]);
       }
       animateReels(temp);
       await new Promise(res=>setTimeout(res, 50 + r*25));
@@ -143,13 +168,13 @@ async function spin(){
     animateReels(payload.reels);
     await fetchBalance();
     const modeBadge = payload.mode === "demo" ? " (DEMO)" : " (REAL)";
-    if(payload.payout && payload.payout > 0){
+    if(winsList){
       const li = document.createElement("li");
-      li.textContent = `WIN KES ${payload.payout.toFixed(2)} — ${payload.center.join(" ")}${modeBadge}`;
-      winsList.prepend(li);
-    } else {
-      const li = document.createElement("li");
-      li.textContent = `Lost KES ${bet.toFixed(2)} — ${payload.center.join(" ")}${modeBadge}`;
+      if(payload.payout && payload.payout > 0){
+        li.textContent = `WIN KES ${payload.payout.toFixed(2)} — ${payload.center.join(" ")}${modeBadge}`;
+      } else {
+        li.textContent = `Lost KES ${bet.toFixed(2)} — ${payload.center.join(" ")}${modeBadge}`;
+      }
       winsList.prepend(li);
     }
   }catch(err){
@@ -161,64 +186,77 @@ async function spin(){
   }
 }
 
-depositBtn.addEventListener("click", async ()=>{
-  const res = await fetch("/deposit");
-  const j = await res.json();
-  let msg = `${j.title}\n\nMinimum deposit: KES ${j.minimum_deposit}\n\n`;
-  msg += j.instructions.map((s,i)=>`${i+1}. ${s}`).join("\n");
-  alert(msg);
-});
-
-toggleSymbols.addEventListener("click", ()=>{
-  symbolsCard.classList.toggle("collapsed");
-  symbolsCard.setAttribute("aria-hidden", symbolsCard.classList.contains("collapsed"));
-});
-
-openWithdraw.addEventListener("click", ()=>{ withdrawModal.classList.remove("hidden"); withdrawMsg.textContent=""; });
-closeWithdraw.addEventListener("click", ()=>{ withdrawModal.classList.add("hidden"); });
-withdrawBtn.addEventListener("click", ()=>{ withdrawModal.classList.remove("hidden"); withdrawMsg.textContent=""; });
-
-submitWithdraw.addEventListener("click", async ()=>{
-  const amount = parseFloat(withdrawAmount.value || "0");
-  const method = withdrawMethod.value;
-  const details = withdrawDetails.value || "";
-  if(isNaN(amount) || amount < parseFloat(withdrawAmount.min || "500")){
-    withdrawMsg.textContent = `Minimum withdrawal is KES ${withdrawAmount.min}`;
-    return;
-  }
-  try{
-    const res = await fetch("/api/withdraw", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({amount, method, details})
-    });
+if(depositBtn){
+  depositBtn.addEventListener("click", async ()=>{
+    const res = await fetch("/deposit");
     const j = await res.json();
-    if(j.error){
-      withdrawMsg.textContent = j.error;
-    }else{
-      withdrawMsg.textContent = j.message || "Withdrawal request submitted.";
-      await fetchBalance();
-      setTimeout(()=>{ withdrawModal.classList.add("hidden"); }, 1200);
-    }
-  }catch(e){
-    withdrawMsg.textContent = "Request failed";
-  }
-});
+    let msg = `${j.title}\n\nMinimum deposit: KES ${j.minimum_deposit}\n\n`;
+    msg += j.instructions.map((s,i)=>`${i+1}. ${s}`).join("\n");
+    alert(msg);
+  });
+}
 
-modeDemoBtn.addEventListener("click", ()=> setMode("demo"));
-modeRealBtn.addEventListener("click", ()=> setMode("real"));
+if(toggleSymbols && symbolsCard){
+  toggleSymbols.addEventListener("click", ()=>{
+    symbolsCard.classList.toggle("collapsed");
+    symbolsCard.setAttribute("aria-hidden", symbolsCard.classList.contains("collapsed"));
+  });
+}
+
+if(openWithdraw && withdrawModal){
+  openWithdraw.addEventListener("click", ()=>{ withdrawModal.classList.remove("hidden"); withdrawMsg.textContent=""; });
+}
+if(closeWithdraw && withdrawModal){
+  closeWithdraw.addEventListener("click", ()=>{ withdrawModal.classList.add("hidden"); });
+}
+if(withdrawBtn && withdrawModal){
+  withdrawBtn.addEventListener("click", ()=>{ withdrawModal.classList.remove("hidden"); withdrawMsg.textContent=""; });
+}
+
+if(submitWithdraw){
+  submitWithdraw.addEventListener("click", async ()=>{
+    const amount = parseFloat(withdrawAmount.value || "0");
+    const method = withdrawMethod.value;
+    const details = withdrawDetails.value || "";
+    if(isNaN(amount) || amount < parseFloat(withdrawAmount.min || "500")){
+      withdrawMsg.textContent = `Minimum withdrawal is KES ${withdrawAmount.min}`;
+      return;
+    }
+    try{
+      const res = await fetch("/api/withdraw", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({amount, method, details})
+      });
+      const j = await res.json();
+      if(j.error){
+        withdrawMsg.textContent = j.error;
+      }else{
+        withdrawMsg.textContent = j.message || "Withdrawal request submitted.";
+        await fetchBalance();
+        setTimeout(()=>{ withdrawModal.classList.add("hidden"); }, 1200);
+      }
+    }catch(e){
+      withdrawMsg.textContent = "Request failed";
+    }
+  });
+}
+
+if(modeDemoBtn) modeDemoBtn.addEventListener("click", ()=> setMode("demo"));
+if(modeRealBtn) modeRealBtn.addEventListener("click", ()=> setMode("real"));
+if(spinBtn) spinBtn.addEventListener("click", spin);
 
 window.addEventListener("load", ()=>{
   populateSymbols();
   fetchSettings();
   fetchBalance();
   setMode("demo");
-  animateReels([
-    [SYMBOLS[0],SYMBOLS[1],SYMBOLS[2]],
-    [SYMBOLS[3],SYMBOLS[4],SYMBOLS[5]],
-    [SYMBOLS[6],SYMBOLS[7],SYMBOLS[8]]
-  ]);
+  if(reelsEls[0]){
+    animateReels([
+      [SYMBOLS[0],SYMBOLS[1],SYMBOLS[2]],
+      [SYMBOLS[3],SYMBOLS[4],SYMBOLS[5]],
+      [SYMBOLS[6],SYMBOLS[7],SYMBOLS[8]]
+    ]);
+  }
 });
-
-spinBtn.addEventListener("click", spin);
 

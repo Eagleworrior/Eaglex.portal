@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Login • EAGLEX CASINO{% endblock %}
+{% block content %}
+<main class="auth-main">
+  <div class="auth-card">
+    <h2 class="gradient-small">Glowing Login Portal</h2>
+    {% if error %}
+      <div class="auth-error">{{ error }}</div>
+    {% endif %}
+    <form method="post" class="auth-form">
+      <label class="label-decor">Username</label>
+      <input type="text" name="username" required />
+      <label class="label-decor">Password</label>
+      <input type="password" name="password" required />
+      <button type="submit" class="neon-btn big">ENTER CASINO</button>
+    </form>
+    <p class="muted decorated-text">
+      No account yet?
+      <a href="{{ url_for('register') }}" class="link-neon">Create a radiant profile</a>
+    </p>
+  </div>
+</main>
+{% endblock %}
+

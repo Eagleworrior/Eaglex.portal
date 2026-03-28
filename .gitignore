@@ -1,6 +1,5 @@
 venv/
-*.pyc
 __pycache__/
+*.pyc
 casino_store.json
-*.db
 .env
